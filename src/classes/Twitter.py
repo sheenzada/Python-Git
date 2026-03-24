@@ -11,7 +11,7 @@ from llm_provider import generate_text
 from typing import List, Optional
 from datetime import datetime
 from termcolor import colored
-from selenium_firefox import *
+
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.firefox.service import Service
@@ -29,26 +29,16 @@ class Twitter:
     def __init__(
         self, account_uuid: str, account_nickname: str, fp_profile_path: str, topic: str
     ) -> None:
-        """
-        Initializes the Twitter Bot.
 
-        Args:
-            account_uuid (str): The account UUID
-            account_nickname (str): The account nickname
-            fp_profile_path (str): The path to the Firefox profile
-
-        Returns:
-            None
-        """
         self.account_uuid: str = account_uuid
         self.account_nickname: str = account_nickname
         self.fp_profile_path: str = fp_profile_path
         self.topic: str = topic
 
-        # Initialize the Firefox profile
+        # Initialize Firefox options
         self.options: Options = Options()
 
-        # Set headless state of browser
+        # Set headless if needed
         if get_headless():
             self.options.add_argument("--headless")
 
@@ -76,9 +66,6 @@ class Twitter:
 
         Args:
             text (str): The text to post
-
-        Returns:
-            None
         """
         bot: webdriver.Firefox = self.browser
         verbose: bool = get_verbose()
@@ -112,7 +99,6 @@ class Twitter:
                 "Could not find tweet text box. Ensure you are logged into X in this Firefox profile."
             )
 
-
         post_button = None
         post_button_selectors = [
             (By.XPATH, "//button[@data-testid='tweetButtonInline']"),
@@ -143,68 +129,44 @@ class Twitter:
     def get_posts(self) -> List[dict]:
         """
         Gets the posts from the cache.
-
-        Returns:
-            posts (List[dict]): The posts
         """
         if not os.path.exists(get_twitter_cache_path()):
-            # Create the cache file
             with open(get_twitter_cache_path(), "w") as file:
                 json.dump({"accounts": []}, file, indent=4)
 
         with open(get_twitter_cache_path(), "r") as file:
             parsed = json.load(file)
-
-            # Find our account
             accounts = parsed["accounts"]
             for account in accounts:
                 if account["id"] == self.account_uuid:
                     posts = account["posts"]
-
-                    if posts is None:
-                        return []
-
-                    # Return the posts
-                    return posts
-
+                    return posts if posts else []
         return []
 
     def add_post(self, post: dict) -> None:
         """
         Adds a post to the cache.
-
-        Args:
-            post (dict): The post to add
-
-        Returns:
-            None
         """
         posts = self.get_posts()
         posts.append(post)
 
         with open(get_twitter_cache_path(), "r") as file:
-            previous_json = json.loads(file.read())
-
-            # Find our account
+            previous_json = json.load(file)
             accounts = previous_json["accounts"]
             for account in accounts:
                 if account["id"] == self.account_uuid:
                     account["posts"].append(post)
 
-            # Commit changes
-            with open(get_twitter_cache_path(), "w") as f:
-                f.write(json.dumps(previous_json))
+        with open(get_twitter_cache_path(), "w") as f:
+            json.dump(previous_json, f, indent=4)
 
     def generate_post(self) -> str:
         """
         Generates a post for the Twitter account based on the topic.
-
-        Returns:
-            post (str): The post
         """
         completion = generate_text(
             f"Generate a Twitter post about: {self.topic} in {get_twitter_language()}. "
-            "The Limit is 2 sentences. Choose a specific sub-topic of the provided topic."
+            "The limit is 2 sentences. Choose a specific sub-topic of the provided topic."
         )
 
         if get_verbose():
@@ -214,11 +176,11 @@ class Twitter:
             error("Failed to generate a post. Please try again.")
             sys.exit(1)
 
-        # Apply Regex to remove all *
         completion = re.sub(r"\*", "", completion).replace('"', "")
 
         if get_verbose():
             info(f"Length of post: {len(completion)}")
+
         if len(completion) >= 260:
             return completion[:257].rsplit(" ", 1)[0] + "..."
 

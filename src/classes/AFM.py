@@ -7,7 +7,7 @@ from config import *
 from constants import *
 from llm_provider import generate_text
 from .Twitter import Twitter
-from selenium_firefox import *
+
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.firefox.service import Service
@@ -28,149 +28,99 @@ class AffiliateMarketing:
         account_nickname: str,
         topic: str,
     ) -> None:
-        """
-        Initializes the Affiliate Marketing class.
 
-        Args:
-            affiliate_link (str): The affiliate link
-            fp_profile_path (str): The path to the Firefox profile
-            twitter_account_uuid (str): The Twitter account UUID
-            account_nickname (str): The account nickname
-            topic (str): The topic of the product
-
-        Returns:
-            None
-        """
         self._fp_profile_path: str = fp_profile_path
 
-        # Initialize the Firefox profile
+        # Initialize Firefox options
         self.options: Options = Options()
 
-        # Set headless state of browser
+        # Headless mode
         if get_headless():
             self.options.add_argument("--headless")
 
+        # Validate profile path
         if not os.path.isdir(fp_profile_path):
             raise ValueError(
-                f"Firefox profile path does not exist or is not a directory: {fp_profile_path}"
+                f"Firefox profile path does not exist: {fp_profile_path}"
             )
 
-        # Set the profile path
+        # Load Firefox profile
         self.options.add_argument("-profile")
         self.options.add_argument(fp_profile_path)
 
-        # Set the service
+        # Setup driver
         self.service: Service = Service(GeckoDriverManager().install())
 
-        # Initialize the browser
         self.browser: webdriver.Firefox = webdriver.Firefox(
-            service=self.service, options=self.options
+            service=self.service,
+            options=self.options
         )
 
-        # Set the affiliate link
+        # Validate affiliate link
         self.affiliate_link: str = affiliate_link
-
         parsed_link = urlparse(self.affiliate_link)
+
         if parsed_link.scheme not in ["http", "https"] or not parsed_link.netloc:
-            raise ValueError(
-                f"Affiliate link is invalid. Expected a full URL, got: {self.affiliate_link}"
-            )
+            raise ValueError(f"Invalid affiliate link: {self.affiliate_link}")
 
-        # Set the Twitter account UUID
+        # Account info
         self.account_uuid: str = twitter_account_uuid
-
-        # Set the Twitter account nickname
         self.account_nickname: str = account_nickname
-
-        # Set the Twitter topic
         self.topic: str = topic
 
-        # Scrape the product information
+        # Scrape product info
         self.scrape_product_information()
 
     def scrape_product_information(self) -> None:
-        """
-        This method will be used to scrape the product
-        information from the affiliate link.
-        """
-        # Open the affiliate link
+        """Scrape product data from affiliate link"""
+
         self.browser.get(self.affiliate_link)
 
-        # Get the product name
+        # Product title
         product_title: str = self.browser.find_element(
             By.ID, AMAZON_PRODUCT_TITLE_ID
         ).text
 
-        # Get the features of the product
-        features: Any = self.browser.find_elements(By.ID, AMAZON_FEATURE_BULLETS_ID)
+        # Features (FIXED: now extracts text properly)
+        features = [
+            el.text for el in self.browser.find_elements(
+                By.ID, AMAZON_FEATURE_BULLETS_ID
+            )
+        ]
 
         if get_verbose():
             info(f"Product Title: {product_title}")
-
-        if get_verbose():
             info(f"Features: {features}")
 
-        # Set the product title
         self.product_title: str = product_title
-
-        # Set the features
         self.features: Any = features
 
     def generate_response(self, prompt: str) -> str:
-        """
-        This method will be used to generate the response for the user.
-
-        Args:
-            prompt (str): The prompt for the user.
-
-        Returns:
-            response (str): The response for the user.
-        """
         return generate_text(prompt)
 
     def generate_pitch(self) -> str:
-        """
-        This method will be used to generate a pitch for the product.
-
-        Returns:
-            pitch (str): The pitch for the product.
-        """
-        # Generate the response
         pitch: str = (
             self.generate_response(
-                f'I want to promote this product on my website. Generate a brief pitch about this product, return nothing else except the pitch. Information:\nTitle: "{self.product_title}"\nFeatures: "{str(self.features)}"'
+                f'I want to promote this product on my website. Generate a brief pitch only.\n'
+                f'Title: "{self.product_title}"\n'
+                f'Features: "{self.features}"'
             )
             + "\nYou can buy the product here: "
             + self.affiliate_link
         )
 
         self.pitch: str = pitch
-
-        # Return the response
         return pitch
 
     def share_pitch(self, where: str) -> None:
-        """
-        This method will be used to share the pitch on the specified platform.
-
-        Args:
-            where (str): The platform where the pitch will be shared.
-        """
         if where == "twitter":
-            # Initialize the Twitter class
             twitter: Twitter = Twitter(
                 self.account_uuid,
                 self.account_nickname,
                 self._fp_profile_path,
                 self.topic,
             )
-
-            # Share the pitch
             twitter.post(self.pitch)
 
     def quit(self) -> None:
-        """
-        This method will be used to quit the browser.
-        """
-        # Quit the browser
         self.browser.quit()
